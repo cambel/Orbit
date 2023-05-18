@@ -312,6 +312,7 @@ def set_rigid_body_properties(
     enable_gyroscopic_forces: Optional[bool] = None,
     disable_gravity: Optional[bool] = None,
     retain_accelerations: Optional[bool] = None,
+    fixed_pos_rot: Optional[bool] = None
 ):
     """Set PhysX parameters for a rigid body prim.
 
@@ -335,6 +336,7 @@ def set_rigid_body_properties(
             rigid body.
         disable_gravity (Optional[bool]): Disable gravity for the actor.
         retain_accelerations (Optional[bool]): Carries over forces/accelerations over sub-steps.
+        fixed_pos_rot: (Optional[bool]) Fixed object pose
 
     Raises:
         ValueError:  When no rigid-body schema found at specified prim path.
@@ -393,6 +395,10 @@ def set_rigid_body_properties(
     # set retain accelerations
     if retain_accelerations is not None:
         physx_rigid_body_api.GetRetainAccelerationsAttr().Set(retain_accelerations)
+    if fixed_pos_rot is not None:
+        if fixed_pos_rot:
+            physx_rigid_body_api.GetLockedPosAxisAttr().Set(1|2|12) # TODO How to set this flags correctly?
+            physx_rigid_body_api.GetLockedRotAxisAttr().Set(1|2|12)
 
 
 def set_collision_properties(

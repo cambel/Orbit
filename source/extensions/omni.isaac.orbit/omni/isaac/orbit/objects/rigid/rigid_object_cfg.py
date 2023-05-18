@@ -39,6 +39,7 @@ class RigidObjectCfg:
         Defaults to 10.0."""
         disable_gravity: Optional[bool] = False
         """Disable gravity for the actor. Defaults to False."""
+        fixed_pos_rot: Optional[bool] = False
 
     @configclass
     class CollisionPropertiesCfg:

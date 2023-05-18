@@ -21,7 +21,7 @@ from omni.isaac.kit import SimulationApp
 parser = argparse.ArgumentParser("Welcome to Orbit: Omniverse Robotics Environments!")
 parser.add_argument("--headless", action="store_true", default=False, help="Force display off at all times.")
 parser.add_argument("--robot", type=str, default="franka_panda", help="Name of the robot.")
-parser.add_argument("--num_envs", type=int, default=128, help="Number of environments to spawn.")
+parser.add_argument("--num_envs", type=int, default=1, help="Number of environments to spawn.")
 args_cli = parser.parse_args()
 
 # launch omniverse app
@@ -46,15 +46,42 @@ from omni.isaac.orbit.controllers.differential_inverse_kinematics import (
     DifferentialInverseKinematicsCfg,
 )
 from omni.isaac.orbit.markers import StaticMarker
+from omni.isaac.orbit.objects import RigidObject, RigidObjectCfg
 from omni.isaac.orbit.robots.config.franka import FRANKA_PANDA_ARM_WITH_PANDA_HAND_CFG
-from omni.isaac.orbit.robots.config.universal_robots import UR10_CFG
 from omni.isaac.orbit.robots.config.ur5e import UR5e_CFG
 from omni.isaac.orbit.robots.single_arm import SingleArmManipulator
 from omni.isaac.orbit.utils.assets import ISAAC_NUCLEUS_DIR
+from omni.isaac.core.utils.nucleus import get_server_path
+from omni.isaac.orbit.utils import configclass
+
+@configclass
+class ManipulationObjectCfg(RigidObjectCfg):
+    """Properties for the object to manipulate in the scene."""
+
+    meta_info = RigidObjectCfg.MetaInfoCfg(
+        usd_path=f"{get_server_path()}/Users/cambel/objects//board.usd",
+        scale=(1.1, 1.1, 1.0),
+    )
+    init_state = RigidObjectCfg.InitialStateCfg(
+        pos=(-0.20,  0.50,  0.15), rot=(0.0, 1.0, 0.0, 0.0), lin_vel=(0.0, 0.0, 0.0), ang_vel=(0.0, 0.0, 0.0)
+    )
+    rigid_props = RigidObjectCfg.RigidBodyPropertiesCfg(
+        solver_position_iteration_count=16,
+        solver_velocity_iteration_count=1,
+        max_angular_velocity=1000.0,
+        max_linear_velocity=1000.0,
+        max_depenetration_velocity=5.0,
+        disable_gravity=True,
+        fixed_pos_rot=True
+    )
+    physics_material = RigidObjectCfg.PhysicsMaterialCfg(
+        static_friction=0.1, dynamic_friction=0.1, restitution=0.0, prim_path="/World/Materials/boardMaterial"
+    )
 
 """
 Main
 """
+
 
 
 def main():
@@ -80,8 +107,10 @@ def main():
     # Markers
     ee_marker = StaticMarker("/Visuals/ee_current", count=args_cli.num_envs, scale=(0.1, 0.1, 0.1))
     goal_marker = StaticMarker("/Visuals/ee_goal", count=args_cli.num_envs, scale=(0.1, 0.1, 0.1))
+
+    
     # Ground-plane
-    kit_utils.create_ground_plane("/World/defaultGroundPlane", z_position=-1.05)
+    kit_utils.create_ground_plane("/World/defaultGroundPlane", z_position=0.0)
     # Lights-1
     prim_utils.create_prim(
         "/World/Light/GreySphere",
@@ -97,24 +126,20 @@ def main():
         attributes={"radius": 2.5, "intensity": 600.0, "color": (1.0, 1.0, 1.0)},
     )
     # -- Table
-    table_usd_path = f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
-    prim_utils.create_prim("/World/envs/env_0/Table", usd_path=table_usd_path)
+    # table_usd_path = f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    # prim_utils.create_prim("/World/envs/env_0/Table", usd_path=table_usd_path)
     # -- Robot
     # resolve robot config from command-line arguments
-    if args_cli.robot == "franka_panda":
-        robot_cfg = FRANKA_PANDA_ARM_WITH_PANDA_HAND_CFG
-    elif args_cli.robot == "ur10":
-        robot_cfg = UR10_CFG
-    elif args_cli.robot == "ur5e":
-        robot_cfg = UR5e_CFG
-    else:
-        raise ValueError(f"Robot {args_cli.robot} is not supported. Valid: franka_panda, ur10")
+    robot_cfg = UR5e_CFG
     # configure robot settings to use IK controller
     robot_cfg.data_info.enable_jacobian = True
     robot_cfg.rigid_props.disable_gravity = True
     # spawn robot
     robot = SingleArmManipulator(cfg=robot_cfg)
     robot.spawn("/World/envs/env_0/Robot", translation=(0.0, 0.0, 0.0))
+    # Board
+    board = RigidObject(ManipulationObjectCfg())
+    board.spawn("/World/envs/env_0/Board")
 
     # Clone the scene
     num_envs = args_cli.num_envs
@@ -143,9 +168,11 @@ def main():
     # Acquire handles
     # Initialize handles
     robot.initialize("/World/envs/env_.*/Robot")
+    board.initialize("/World/envs/env_.*/Board")
     ik_controller.initialize()
     # Reset states
     robot.reset_buffers()
+    board.reset_buffers()
     ik_controller.reset_idx()
 
     # Now we are ready!
@@ -194,6 +221,7 @@ def main():
             dof_pos, dof_vel = robot.get_default_dof_state()
             robot.set_dof_state(dof_pos, dof_vel)
             robot.reset_buffers()
+            
             # reset controller
             ik_controller.reset_idx()
             # reset actions
@@ -229,6 +257,11 @@ def main():
             # update marker positions
             ee_marker.set_world_poses(robot.data.ee_state_w[:, 0:3], robot.data.ee_state_w[:, 3:7])
             goal_marker.set_world_poses(ik_commands[:, 0:3] + envs_positions, ik_commands[:, 3:7])
+            board_state = board.get_default_root_state(clone=False)
+            board_state[:, :3] = ik_commands[:, 0:3] + envs_positions
+            board_state[:, 3:7] = ik_commands[:, 3:7]
+            board.set_root_state(board_state)
+
 
 
 if __name__ == "__main__":

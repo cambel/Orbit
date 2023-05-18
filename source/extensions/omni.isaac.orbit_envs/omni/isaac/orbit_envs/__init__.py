@@ -92,3 +92,9 @@ gym.register(
     entry_point="omni.isaac.orbit_envs.manipulation.lift:LiftEnv",
     kwargs={"cfg_entry_point": "omni.isaac.orbit_envs.manipulation.lift:LiftEnvCfg"},
 )
+
+gym.register(
+    id="Isaac-PegInHole-UR5e-v0",
+    entry_point="omni.isaac.orbit_envs.manipulation.peg_in_hole:PegInHoleEnv",
+    kwargs={"cfg_entry_point": "omni.isaac.orbit_envs.manipulation.peg_in_hole:PegInHoleEnvCfg"},
+)
