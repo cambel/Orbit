@@ -23,7 +23,14 @@ the peripheral device.
 from .device_base import DeviceBase, DeviceCfg, DevicesCfg
 from .gamepad import Se2Gamepad, Se2GamepadCfg, Se3Gamepad, Se3GamepadCfg
 from .haply import HaplyDevice, HaplyDeviceCfg
-from .keyboard import Se2Keyboard, Se2KeyboardCfg, Se3Keyboard, Se3KeyboardCfg
+from .keyboard import (
+    Se2Keyboard,
+    Se2KeyboardCfg,
+    Se3Keyboard,
+    Se3KeyboardCfg,
+    Se3KeyboardPynput,
+    Se3KeyboardPynputCfg,
+)
 from .openxr import ManusVive, ManusViveCfg, OpenXRDevice, OpenXRDeviceCfg
 from .retargeter_base import RetargeterBase, RetargeterCfg
 from .spacemouse import Se2SpaceMouse, Se2SpaceMouseCfg, Se3SpaceMouse, Se3SpaceMouseCfg

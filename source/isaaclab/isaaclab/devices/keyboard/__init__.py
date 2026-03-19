@@ -7,3 +7,4 @@
 
 from .se2_keyboard import Se2Keyboard, Se2KeyboardCfg
 from .se3_keyboard import Se3Keyboard, Se3KeyboardCfg
+from .se3_keyboard_pynput import Se3KeyboardPynput, Se3KeyboardPynputCfg
