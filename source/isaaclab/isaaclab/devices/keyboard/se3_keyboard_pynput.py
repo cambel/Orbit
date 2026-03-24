@@ -17,6 +17,7 @@ Note: May have issues on Wayland; use X11 (e.g. XDG_SESSION_TYPE=x11) if needed.
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -69,13 +70,13 @@ class Se3KeyboardPynput(DeviceBase):
         self._create_key_bindings()
 
         self._close_gripper = False
-        self._delta_pos = np.zeros(3)
-        self._delta_rot = np.zeros(3)
         self._additional_callbacks: dict[str, Callable[[], None]] = {}
 
         self._lock = threading.Lock()
         self._active_keys: set[str] = set()
+        self._last_seen: dict[str, float] = {}  # key -> last press time (for debouncing key repeat)
         self._pending_callbacks: list[str] = []
+        self._release_debounce_s = 0.1  # Only remove key after no press for this long
 
         self._listener = keyboard.Listener(
             on_press=self._on_press,
@@ -112,9 +113,8 @@ class Se3KeyboardPynput(DeviceBase):
     def _reset_internal(self):
         """Reset state (must be called with _lock held)."""
         self._close_gripper = False
-        self._delta_pos = np.zeros(3)
-        self._delta_rot = np.zeros(3)
         self._active_keys.clear()
+        self._last_seen.clear()
         self._pending_callbacks.clear()
 
     def add_callback(self, key: str, func: Callable[[], None]):
@@ -135,8 +135,20 @@ class Se3KeyboardPynput(DeviceBase):
                 - gripper command: Last element (+1.0 open, -1.0 close).
         """
         with self._lock:
-            delta_pos = self._delta_pos.copy()
-            delta_rot = self._delta_rot.copy()
+            now = time.time()
+            # Remove keys that haven't been seen recently (debounce key-repeat release)
+            stale = [k for k in self._active_keys if now - self._last_seen.get(k, 0) > self._release_debounce_s]
+            for k in stale:
+                self._active_keys.discard(k)
+                self._last_seen.pop(k, None)
+            # Compute delta from currently held keys
+            delta_pos = np.zeros(3)
+            delta_rot = np.zeros(3)
+            for k in self._active_keys:
+                if k in ["W", "S", "A", "D", "Q", "E"]:
+                    delta_pos += self._INPUT_KEY_MAPPING[k]
+                elif k in ["Z", "X", "T", "G", "C", "V"]:
+                    delta_rot += self._INPUT_KEY_MAPPING[k]
             pending = list(self._pending_callbacks)
             self._pending_callbacks.clear()
 
@@ -158,6 +170,7 @@ class Se3KeyboardPynput(DeviceBase):
         if k is None:
             return
         with self._lock:
+            self._last_seen[k] = time.time()
             if k not in self._active_keys:
                 self._active_keys.add(k)
                 if k == "L":
@@ -169,22 +182,15 @@ class Se3KeyboardPynput(DeviceBase):
                 if k in self._additional_callbacks:
                     self._pending_callbacks.append(k)
                     return
-                if k in ["W", "S", "A", "D", "Q", "E"]:
-                    self._delta_pos += self._INPUT_KEY_MAPPING[k]
-                elif k in ["Z", "X", "T", "G", "C", "V"]:
-                    self._delta_rot += self._INPUT_KEY_MAPPING[k]
 
     def _on_release(self, key):
-        """Handle key release (called from pynput thread)."""
-        k = self._key_to_char(key)
-        if k is None:
-            return
-        with self._lock:
-            self._active_keys.discard(k)
-            if k in ["W", "S", "A", "D", "Q", "E"]:
-                self._delta_pos -= self._INPUT_KEY_MAPPING[k]
-            elif k in ["Z", "X", "T", "G", "C", "V"]:
-                self._delta_rot -= self._INPUT_KEY_MAPPING[k]
+        """Handle key release (called from pynput thread).
+
+        We do NOT remove from _active_keys here. Key repeat sends rapid press-release
+        cycles; removing on release would clear the key before advance() reads it.
+        Instead, advance() removes keys that haven't been seen for _release_debounce_s.
+        """
+        # No-op: removal is done in advance() via debounce
 
     def _key_to_char(self, key) -> str | None:
         """Convert pynput key to uppercase char for mapping."""
